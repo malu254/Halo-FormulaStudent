@@ -1,12 +1,10 @@
-const int DRIVERS_NUMBER = 22;
+const int DRIVERS_NUMBER = 50; // Max FS teams tracked
 
 // ESP32 Boards used v3.3.4
 
-// fix the results api for when there are changes that result in a lesser number of drivers
-// add other rss feed in other languages
-// add language switcher to wifi setup screen --> not applicable right now
-// settings: make user decide if they want to see drivers standings, constructors or both one after the other in the main page (select tool)
-// settings: add bool switch to control if tabs should be switched to news when a new article is fetched
+// Formula Student adaptation: shows FS team ELO rankings and event calendar
+// Team data fetched from FSELO (fselo.get-racing.de) with hardcoded fallback
+// Focuses on events in Germany (FSG), Spain (FSS), Czech Republic (FSCzech)
 
 #define DISPLAY_TYPE DISPLAY_CYD_543
 #define TOUCH_CAPACITIVE
@@ -26,9 +24,9 @@ const int DRIVERS_NUMBER = 22;
 #define SCREEN_HEIGHT 480
 
 #ifdef TOUCH_CAPACITIVE
-const String fw_version = "1.2.2-beta";
+const String fw_version = "1.3.0-FS-beta";
 #else
-const String fw_version = "1.2.2-R-beta";
+const String fw_version = "1.3.0-FS-R-beta";
 #endif
 
 
@@ -103,26 +101,26 @@ TimeRoller timezoneRoller = {nullptr, nullptr};
 
 struct DriverStanding {
   String position;
-  String points;
-  String number;
-  String name;
-  String surname;
-  String constructor;
-  String constructorId;
+  String points;   // ELO score for FS teams
+  String number;   // team number (if any)
+  String name;     // university short name
+  String surname;  // team name
+  String constructor;   // country
+  String constructorId; // country code (for color)
 };
 
 struct TeamStandings {
   String position;
-  String points;
-  String name;
-  String id;
+  String points;   // best ELO or cumulative
+  String name;     // university full name
+  String id;       // country code
 };
 
 struct SeasonStanding {
   String season;
   String round;
-  DriverStanding driver_standings[30];
-  TeamStandings team_standings[12];
+  DriverStanding driver_standings[50]; // FS team ELO rankings
+  TeamStandings team_standings[30];    // University summary
   int driver_count;
   int team_count;
 };
@@ -145,29 +143,15 @@ struct NextRaceInfo {
     float lon;
     bool isSprintWeekend;
     int sessionCount;
-    RaceSession sessions[10]; // Usually no more than 6
+    RaceSession sessions[10]; // FS events typically have 5-7 public sessions
 };
 
 NextRaceInfo next_race;
 
-struct SessionResults {
-  String driver_number;
-  String position;
-  float duration;
-  float quali[3];
-  float gap_to_leader;
-  float gap_to_leader_quali[3];
-  bool isQualifying;
-  bool dnf;
-  bool dns;
-};
+// No live session results for Formula Student (no equivalent of OpenF1 API)
+bool standings_loaded_once = false;
 
-SessionResults results[DRIVERS_NUMBER];
-String current_results, last_results;
-bool results_checked_once = false, results_loaded_once = false, standings_loaded_once = false, got_new_results = false;
-
-unsigned long long last_checked_session_results = 0;
-unsigned int check_delay = 0;
+const int TOTAL_DRIVERS = 50; // max FS teams shown
 
 lv_display_t * disp;
 lv_timer_t * clock_timer, * f1_api_timer, * standings_ui_timer, *news_timer, *statistics_timer, *notifications_timer;
@@ -187,7 +171,7 @@ bool   noSpoilerWasStandings      = false; // true = was hiding standings; false
 
 static int standings_offset = 0;
 const int STANDINGS_PAGE_SIZE = 5;
-const int TOTAL_DRIVERS = 22; // adjust if needed
+// TOTAL_DRIVERS is defined above (50)
 
 struct ScreenStruct {
   lv_obj_t * wifi;

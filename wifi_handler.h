@@ -102,383 +102,308 @@ bool getLatestNews(String &title, String &link, String &desc) {
   return true;
 }
 
-// Fetch latest session result, returns false if failed or not yet available (session ongoing or not enough time passed since the end)
-bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
-  got_new_results = false;
+// ── Hardcoded fallback FS Electric team ELO rankings (2024 season approximate)
+// Update this list each season or when FSELO fetch fails.
+static void load_fs_hardcoded_rankings() {
+  struct FSTeamEntry { const char* name; const char* university; const char* country; const char* countryCode; int elo; };
+  static const FSTeamEntry fsTeams[] = {
+    {"AMZ Racing",           "ETH Zurich",        "Switzerland",     "SUI", 2450},
+    {"KA-RaceIng",           "KIT",               "Germany",         "GER", 2380},
+    {"TU Graz Racing",       "TU Graz",           "Austria",         "AUT", 2310},
+    {"DHBW Engineering",     "DHBW Stuttgart",    "Germany",         "GER", 2280},
+    {"municHMotorsport",     "TU Munich",         "Germany",         "GER", 2250},
+    {"High Octane MS",       "HS Esslingen",      "Germany",         "GER", 2200},
+    {"UAS Racing",           "HFT Stuttgart",     "Germany",         "GER", 2170},
+    {"GET Low Racing",       "Univ. Stuttgart",   "Germany",         "GER", 2150},
+    {"RIOT Racing",          "Loughborough Univ", "Great Britain",   "GBR", 2120},
+    {"Revolve NTNU",         "NTNU",              "Norway",          "NOR", 2100},
+    {"FaSTTUBe",             "TU Berlin",         "Germany",         "GER", 2080},
+    {"TUfast",               "TU Munich",         "Germany",         "GER", 2060},
+    {"SAY Racing",           "FH Salzburg",       "Austria",         "AUT", 2040},
+    {"Ecurie Aix",           "RWTH Aachen",       "Germany",         "GER", 2020},
+    {"STUBA Green Team",     "STU Bratislava",    "Slovakia",        "SVK", 2000},
+    {"e-Ting Racing",        "Univ. Heidelberg",  "Germany",         "GER", 1980},
+    {"TU Wien Racing",       "TU Wien",           "Austria",         "AUT", 1960},
+    {"Edinburgh Univ. FS",   "Univ. Edinburgh",   "Great Britain",   "GBR", 1940},
+    {"Celeritas Dynamics",   "TU Eindhoven",      "Netherlands",     "NLD", 1920},
+    {"EPFL Racing Team",     "EPFL",              "Switzerland",     "SUI", 1900},
+    {"mrt",                  "TU Munich",         "Germany",         "GER", 1880},
+    {"Green Formula",        "HS Offenburg",      "Germany",         "GER", 1860},
+    {"Weiss Racing",         "HS Esslingen",      "Germany",         "GER", 1840},
+    {"ITK Racing Team",      "TU Budapest",       "Hungary",         "HUN", 1820},
+    {"RUSTy",                "Ruhr-Univ. Bochum", "Germany",         "GER", 1800},
+  };
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[Session Results] WiFi not connected!");
-    return false;
+  int count = sizeof(fsTeams) / sizeof(fsTeams[0]);
+  if (count > 50) count = 50;
+  current_season.driver_count = count;
+  current_season.season = "2024";
+  current_season.round  = "0";
+
+  for (int i = 0; i < count; i++) {
+    current_season.driver_standings[i].position      = String(i + 1);
+    current_season.driver_standings[i].points        = String(fsTeams[i].elo);
+    current_season.driver_standings[i].number        = "";
+    current_season.driver_standings[i].name          = fsTeams[i].university;
+    current_season.driver_standings[i].surname       = fsTeams[i].name;
+    current_season.driver_standings[i].constructor   = fsTeams[i].country;
+    current_season.driver_standings[i].constructorId = fsTeams[i].countryCode;
   }
 
-  WiFiClientSecure secureClient;
-  secureClient.setInsecure();          // same approach as fetchLatestNews
-
-  HTTPClient http;
-
-  String url = "https://api.openf1.org/v1/session_result?session_key=latest&position%3C=" + (String)DRIVERS_NUMBER;
-  //http.begin("https://api.openf1.org/v1/session_result?session_key=7782&position%3C=20"); // debug
-
-  http.begin(secureClient, url);       // explicit TLS client passed
-  http.setTimeout(10000); 
-
-  int httpCode = http.GET();
-  if (httpCode != 200) {
-    Serial.printf("[Session Results] HTTP request failed, code: %d\n", httpCode);
-    http.end();
-    return false;
-  }
-
-  String payload = http.getString();
-  http.end();
-
-  if (payload.substring(2,8) == "detail") return false;
-
-  JsonDocument doc;
-
-  DeserializationError error = deserializeJson(doc, payload);
-  if (error) {
-    Serial.print("[Session Results] JSON parsing failed for Last Session Results: ");
-    Serial.println(error.c_str());
-    return false;
-  }
-
-  Serial.print("[Session Results] Payload: ");
-  Serial.println(payload);
-
-  if (payload == "[]") return false;
-
-  JsonArray arr = doc.as<JsonArray>();
-  int i = 0;
-
-  for (JsonObject obj : arr) {
-    if (i >= TOTAL_DRIVERS) break;
-
-    if(!obj["position"]) return false;
-
-    results[i].position = obj["position"].as<String>();
-    results[i].driver_number = obj["driver_number"].as<String>();
-
-    // Handle "duration" (could be number or array)
-    if (obj["duration"].is<JsonArray>()) {
-      results[i].isQualifying = true;
-      int j = 0;
-      for (JsonVariant v : obj["duration"].as<JsonArray>()) {
-        if (j < 3) results[i].quali[j] = v.as<float>();
-        j++;
+  // Build university standings from team list
+  struct UniEntry { const char* name; const char* code; int bestElo; int rank; };
+  static UniEntry unis[30];
+  int uniCount = 0;
+  for (int i = 0; i < count; i++) {
+    bool found = false;
+    for (int j = 0; j < uniCount; j++) {
+      if (String(unis[j].code) == String(fsTeams[i].countryCode)) {
+        found = true;
+        break;
       }
-
-      j = 0;
-      for (JsonVariant v : obj["gap_to_leader"].as<JsonArray>()) {
-        if (j < 3) results[i].gap_to_leader_quali[j] = v.as<float>();
-        j++;
-      }
-
-    } else {
-      results[i].isQualifying = false;
-      results[i].duration = obj["duration"].as<float>();
-      results[i].gap_to_leader = obj["gap_to_leader"].as<float>();
-      results[i].dns = obj["dns"].as<bool>();
-      results[i].dnf = obj["dnf"].as<bool>();
     }
-
-    i++;
-  }
-
-  results_loaded_once = true;
-  got_new_results = true;
-  
-  return true;
-}
-
-bool fetch_f1_driver_standings() {
-  HTTPClient client;
-  JsonDocument doc;
-  DeserializationError error;
-  int statusCode;
-  bool preSeasonFallback = false;
-
-  // ── Driver Standings ────────────────────────────────────────────────────────
-  std::string url = "https://api.jolpi.ca/ergast/f1/current/driverstandings/";
-  client.begin(url.c_str());
-  statusCode = client.GET();
-  if (statusCode != 200) { client.end(); return false; }
-  error = deserializeJson(doc, client.getStream());
-  client.end();
-  if (error) { Serial.printf("[Driver Standings] JSON error: %s\n", error.c_str()); return false; }
-
-  JsonArray driverStandingsLists = doc["MRData"]["StandingsTable"]["StandingsLists"].as<JsonArray>();
-
-  if (!driverStandingsLists.isNull() && driverStandingsLists.size() > 0) {
-    // ── Normal path ──────────────────────────────────────────────────────────
-    JsonObject standingsList = driverStandingsLists[0];
-    current_season.season = standingsList["season"].as<String>();
-    current_season.round  = standingsList["round"].as<String>();
-    JsonArray standings = standingsList["DriverStandings"].as<JsonArray>();
-    current_season.driver_count = standings.size();
-    for (size_t i = 0; i < current_season.driver_count && i < 30; i++) {
-      JsonObject item   = standings[i];
-      JsonObject driver = item["Driver"];
-      JsonArray  constructors = item["Constructors"].as<JsonArray>();
-      JsonObject constructor;
-      if (!constructors.isNull() && constructors.size() > 0)
-        constructor = constructors[constructors.size() - 1];
-      current_season.driver_standings[i].position      = item["positionText"].as<String>();
-      current_season.driver_standings[i].points        = item["points"].as<String>();
-      current_season.driver_standings[i].number        = driver["permanentNumber"].as<String>();
-      current_season.driver_standings[i].name          = driver["givenName"].as<String>();
-      current_season.driver_standings[i].surname       = driver["familyName"].as<String>();
-      current_season.driver_standings[i].constructor   = constructor["name"].as<String>();
-      current_season.driver_standings[i].constructorId = constructor["constructorId"].as<String>();
-      if (current_season.driver_standings[i].name == "Andrea Kimi")
-        current_season.driver_standings[i].name = "A. Kimi";
-    }
-  } else {
-    // ── Pre-season fallback ──────────────────────────────────────────────────
-    preSeasonFallback = true;
-
-    // Simple lookup table: driverId → {constructorId, constructorName}
-    String mapDriverId[30], mapCtorId[30], mapCtorName[30];
-    int mapSize = 0;
-
-    // Step 1: fetch constructor list.
-    // For each constructor, fetch its driver roster to build the lookup map.
-    // Also populate team_standings here so we don't need to fetch it again later.
-    doc.clear();
-    url = "https://api.jolpi.ca/ergast/f1/current/constructors/";
-    client.begin(url.c_str());
-    statusCode = client.GET();
-    if (statusCode != 200) { client.end(); return false; }
-    error = deserializeJson(doc, client.getStream());
-    client.end();
-    if (error) { Serial.printf("[Driver Standings] JSON error: %s\n", error.c_str()); return false; }
-
-    JsonArray constructors = doc["MRData"]["ConstructorTable"]["Constructors"].as<JsonArray>();
-    current_season.team_count = min((int)constructors.size(), 12);
-
-    for (size_t i = 0; i < (size_t)current_season.team_count; i++) {
-      JsonObject ctor     = constructors[i];
-      String     ctorId   = ctor["constructorId"].as<String>();
-      String     ctorName = ctor["name"].as<String>();
-
-      // Populate team standings with zero points while we're here
-      current_season.team_standings[i].position = String(i + 1);
-      current_season.team_standings[i].points   = "0";
-      current_season.team_standings[i].name     = ctorName;
-      current_season.team_standings[i].id       = ctorId;
-
-      // Fetch the driver roster for this constructor
-      JsonDocument ctorDriverDoc;
-      std::string  ctorDriverUrl = "https://api.jolpi.ca/ergast/f1/current/constructors/"
-                                   + std::string(ctorId.c_str()) + "/drivers/";
-      client.begin(ctorDriverUrl.c_str());
-      if (client.GET() == 200) {
-        deserializeJson(ctorDriverDoc, client.getStream());
-        JsonArray ctorDrivers = ctorDriverDoc["MRData"]["DriverTable"]["Drivers"].as<JsonArray>();
-        for (JsonObject d : ctorDrivers) {
-          if (mapSize < 30) {
-            mapDriverId[mapSize] = d["driverId"].as<String>();
-            mapCtorId[mapSize]   = ctorId;
-            mapCtorName[mapSize] = ctorName;
-            mapSize++;
-          }
-        }
-      }
-      client.end();
-    }
-
-    // Step 2: fetch the full driver list and resolve constructor via the map
-    doc.clear();
-    url = "https://api.jolpi.ca/ergast/f1/current/drivers/";
-    client.begin(url.c_str());
-    statusCode = client.GET();
-    if (statusCode != 200) { client.end(); return false; }
-    error = deserializeJson(doc, client.getStream());
-    client.end();
-    if (error) { Serial.printf("[Driver Standings] JSON error: %s\n", error.c_str()); return false; }
-
-    current_season.season = doc["MRData"]["DriverTable"]["season"].as<String>();
-    current_season.round  = "0";
-
-    JsonArray drivers = doc["MRData"]["DriverTable"]["Drivers"].as<JsonArray>();
-    current_season.driver_count = drivers.size();
-    for (size_t i = 0; i < current_season.driver_count && i < 30; i++) {
-      JsonObject driver   = drivers[i];
-      String     driverId = driver["driverId"].as<String>();
-
-      // Resolve constructor from lookup map
-      String ctorId = "", ctorName = "";
-      for (int m = 0; m < mapSize; m++) {
-        if (mapDriverId[m] == driverId) { ctorId = mapCtorId[m]; ctorName = mapCtorName[m]; break; }
-      }
-
-      current_season.driver_standings[i].position      = String(i + 1);
-      current_season.driver_standings[i].points        = "0";
-      current_season.driver_standings[i].name          = driver["givenName"].as<String>();
-      current_season.driver_standings[i].surname       = driver["familyName"].as<String>();
-      current_season.driver_standings[i].number        = driver["familyName"].as<String>() == "Lindblad" ? "41" : driver["permanentNumber"].as<String>();
-      current_season.driver_standings[i].constructor   = ctorName;
-      current_season.driver_standings[i].constructorId = ctorId;
-      if (current_season.driver_standings[i].name == "Andrea Kimi")
-        current_season.driver_standings[i].name = "A. Kimi";
+    if (!found && uniCount < 30) {
+      unis[uniCount].name    = fsTeams[i].country;
+      unis[uniCount].code    = fsTeams[i].countryCode;
+      unis[uniCount].bestElo = fsTeams[i].elo;
+      unis[uniCount].rank    = uniCount + 1;
+      uniCount++;
     }
   }
-
-  // ── Constructor Standings ───────────────────────────────────────────────────
-  if (preSeasonFallback) {
-    // team_standings already populated during the driver fallback above — skip
-  } else {
-    doc.clear();
-    url = "https://api.jolpi.ca/ergast/f1/current/constructorstandings/";
-    client.begin(url.c_str());
-    statusCode = client.GET();
-    if (statusCode != 200) { client.end(); return false; }
-    error = deserializeJson(doc, client.getStream());
-    client.end();
-    if (error) { Serial.printf("[Constructor Standings] JSON error: %s\n", error.c_str()); return false; }
-
-    JsonArray constructorStandingsLists = doc["MRData"]["StandingsTable"]["StandingsLists"].as<JsonArray>();
-
-    if (!constructorStandingsLists.isNull() && constructorStandingsLists.size() > 0) {
-      // ── Normal path ────────────────────────────────────────────────────────
-      JsonObject standingsList = constructorStandingsLists[0];
-      JsonArray  standings     = standingsList["ConstructorStandings"].as<JsonArray>();
-      current_season.team_count = standings.size();
-      for (size_t i = 0; i < current_season.team_count && i < 12; i++) {
-        JsonObject item = standings[i];
-        JsonObject team = item["Constructor"];
-        current_season.team_standings[i].position = item["position"].as<String>();
-        current_season.team_standings[i].points   = item["points"].as<String>();
-        current_season.team_standings[i].name     = team["name"].as<String>();
-        current_season.team_standings[i].id       = team["constructorId"].as<String>();
-      }
-    } else {
-      // ── Fallback (edge case: driver standings exist but constructor don't) ─
-      doc.clear();
-      url = "https://api.jolpi.ca/ergast/f1/current/constructors/";
-      client.begin(url.c_str());
-      statusCode = client.GET();
-      if (statusCode != 200) { client.end(); return false; }
-      error = deserializeJson(doc, client.getStream());
-      client.end();
-      if (error) { Serial.printf("[Constructor Standings] JSON error: %s\n", error.c_str()); return false; }
-      JsonArray constructors = doc["MRData"]["ConstructorTable"]["Constructors"].as<JsonArray>();
-      current_season.team_count = constructors.size();
-      for (size_t i = 0; i < current_season.team_count && i < 12; i++) {
-        JsonObject team = constructors[i];
-        current_season.team_standings[i].position = String(i + 1);
-        current_season.team_standings[i].points   = "0";
-        current_season.team_standings[i].name     = team["name"].as<String>();
-        current_season.team_standings[i].id       = team["constructorId"].as<String>();
-      }
-    }
+  current_season.team_count = uniCount;
+  for (int j = 0; j < uniCount; j++) {
+    current_season.team_standings[j].position = String(unis[j].rank);
+    current_season.team_standings[j].points   = String(unis[j].bestElo);
+    current_season.team_standings[j].name     = unis[j].name;
+    current_season.team_standings[j].id       = unis[j].code;
   }
 
   standings_loaded_once = true;
+}
+
+// Try to parse FSELO JSON response into current_season
+// Expected format: array of objects with "pos","team","university","country","elo" fields
+static bool parse_fselo_json(const String& payload) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) {
+    Serial.printf("[FSELO] JSON parse error: %s\n", error.c_str());
+    return false;
+  }
+
+  JsonArray arr = doc.as<JsonArray>();
+  if (arr.isNull() || arr.size() == 0) {
+    // Try object with "teams" array
+    arr = doc["teams"].as<JsonArray>();
+    if (arr.isNull() || arr.size() == 0) return false;
+  }
+
+  int count = 0;
+  for (JsonObject obj : arr) {
+    if (count >= 50) break;
+    String teamName = obj["team"] | obj["name"] | obj["team_name"] | "";
+    String university = obj["university"] | obj["school"] | obj["uni"] | "";
+    String country = obj["country"] | obj["nation"] | "";
+    String countryCode = obj["country_code"] | obj["code"] | country.substring(0, 3);
+    String eloStr = obj["elo"] | obj["rating"] | obj["score"] | "0";
+    String posStr = obj["pos"] | obj["rank"] | obj["position"] | String(count + 1);
+
+    if (teamName.length() == 0 && university.length() == 0) continue;
+
+    current_season.driver_standings[count].position      = posStr;
+    current_season.driver_standings[count].points        = eloStr;
+    current_season.driver_standings[count].number        = "";
+    current_season.driver_standings[count].name          = university;
+    current_season.driver_standings[count].surname       = teamName;
+    current_season.driver_standings[count].constructor   = country;
+    current_season.driver_standings[count].constructorId = countryCode;
+    count++;
+  }
+
+  if (count == 0) return false;
+
+  current_season.driver_count = count;
+  current_season.season = "2025";
+  current_season.round  = "0";
+  standings_loaded_once = true;
+  Serial.printf("[FSELO] Parsed %d teams from FSELO\n", count);
   return true;
 }
 
-
-// Fetch next race infos and loads them into the given "NextRaceInfo" type struct or returns false on fail
-bool getNextRaceInfo(NextRaceInfo &info) {
-    HTTPClient http;
-    //http.begin("https://api.jolpi.ca/ergast/f1/2026/2/races/"); //sprint weekend for testing purposes
-    http.begin("https://api.jolpi.ca/ergast/f1/current/next/races/");
-    int httpCode = http.GET();
-
-    if (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND) {
-      String newUrl = http.getLocation(); // this gives the "Location" header from the redirect
-      Serial.println("Redirect to: " + newUrl);
-      http.end(); // close the previous connection
-      http.begin(newUrl);
-      httpCode = http.GET();
-    }
-
-    if (httpCode != 200) {
-        Serial.println("HTTP Error: " + String(httpCode));
-        http.end();
-        return false;
-    }
-
-    String payload = http.getString();
-    http.end();
-
-    JsonDocument doc;
-
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error) {
-        Serial.println("[Next Race Info] JSON parse failed");
-        return false;
-    }
-
-    JsonObject race = doc["MRData"]["RaceTable"]["Races"][0];
-    info.raceName    = race["raceName"].as<String>();
-    info.circuitName = race["Circuit"]["circuitName"].as<String>();
-    info.country     = race["Circuit"]["Location"]["country"].as<String>();
-    info.lat         = race["Circuit"]["Location"]["lat"].as<float>();
-    info.lon         = race["Circuit"]["Location"]["long"].as<float>();
-
-    info.sessionCount = 0;
-    info.isSprintWeekend = race["Sprint"].is<JsonVariant>(); //checking if key exists, maybe better to do as race["Sprint"] ? true : false; ??
-
-    // List of possible sessions in API
-    const char* sessionKeys[] = { "FirstPractice", "SecondPractice", "ThirdPractice", "SprintQualifying", "Sprint", "Qualifying"};
-    const char* sessionNames[] = { "FP1", "FP2", "FP3", "Sprint Qualifying", "Sprint Race", "Qualifying" };
-    int sessionTotal = sizeof(sessionKeys) / sizeof(sessionKeys[0]);
-
-    for (int i = 0; i < sessionTotal; i++) {
-      if (race[sessionKeys[i]]) {
-        String dateUTC = race[sessionKeys[i]]["date"].as<String>();
-        String timeUTC = race[sessionKeys[i]]["time"].as<String>();
-
-        info.sessions[info.sessionCount].name = sessionNames[i];
-        info.sessions[info.sessionCount].date = dateUTC;
-        info.sessions[info.sessionCount].time = timeUTC;
-        info.sessionCount++;
-      }
-    }
-
-    String dateUTC = race["date"].as<String>();
-    String timeUTC = race["time"].as<String>();
-
-    info.sessions[info.sessionCount].name = "Race";
-    info.sessions[info.sessionCount].date = dateUTC;
-    info.sessions[info.sessionCount].time = timeUTC;
-    info.sessionCount++;
-
+// Fetch FS Electric team ELO rankings from FSELO website (with hardcoded fallback)
+bool fetch_fs_team_rankings() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[FSELO] WiFi not connected");
+    load_fs_hardcoded_rankings();
     return true;
+  }
+
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  HTTPClient http;
+  http.setTimeout(8000);
+
+  // Try a few known URL patterns for FSELO data
+  const char* urls[] = {
+    "https://fselo.get-racing.de/elo_website_electric/data/elo_table_electric.json",
+    "https://fselo.get-racing.de/elo_website_electric/data/elo.json",
+    "https://fselo.get-racing.de/elo_website_electric/data/data.json",
+    "https://fselo.get-racing.de/elo_website_electric/data/electric.json",
+  };
+
+  for (int u = 0; u < 4; u++) {
+    http.begin(secureClient, urls[u]);
+    int code = http.GET();
+    if (code == 200) {
+      String payload = http.getString();
+      http.end();
+      if (parse_fselo_json(payload)) {
+        Serial.printf("[FSELO] Successfully fetched from %s\n", urls[u]);
+        return true;
+      }
+    } else {
+      http.end();
+    }
+  }
+
+  Serial.println("[FSELO] All API attempts failed, using hardcoded rankings");
+  load_fs_hardcoded_rankings();
+  return true;
 }
 
-// Runs with a lvgl timer, fetches driver standings and next race infos (baseline F1 APIs)
+// ── Formula Student 2025 Event Calendar ───────────────────────────────────────
+// Events in Germany (FSG), Spain (FSS), Czech Republic (FSCzech)
+// Dates are approximate — verify at formulastudent.de and fsevents.de each year.
+
+struct FSEventDef {
+  const char* name;
+  const char* circuit;
+  const char* country;
+  float lat;
+  float lon;
+  // 5 session slots: Scrutineering, Static Events, Skid Pad & Acc., Autocross, Endurance
+  const char* sessionNames[5];
+  const char* sessionDates[5];
+  const char* sessionTimes[5];
+};
+
+// 2025 FS calendar – Electric class (dates approximate, update as confirmed)
+static const FSEventDef fs_events_2025[] = {
+  {
+    "FS Czech Republic 2025",
+    "Autodrom Most",
+    "Czech Republic",
+    50.5127f, 13.6368f,
+    {"Scrutineering", "Static Events", "Skid Pad & Acc.", "Autocross", "Endurance"},
+    {"2025-07-24",   "2025-07-25",    "2025-07-26",       "2025-07-27", "2025-07-27"},
+    {"08:00:00Z",    "08:00:00Z",     "08:00:00Z",        "08:00:00Z",  "12:00:00Z"},
+  },
+  {
+    "Formula Student Germany 2025",
+    "Hockenheimring",
+    "Germany",
+    49.3278f, 8.5660f,
+    {"Scrutineering", "Static Events", "Skid Pad & Acc.", "Autocross", "Endurance"},
+    {"2025-08-06",   "2025-08-07",    "2025-08-08",       "2025-08-09", "2025-08-10"},
+    {"08:00:00Z",    "08:00:00Z",     "08:00:00Z",        "08:00:00Z",  "08:00:00Z"},
+  },
+  {
+    "Formula Student Spain 2025",
+    "Circuit de Barcelona",
+    "Spain",
+    41.5701f, 2.2614f,
+    {"Scrutineering", "Static Events", "Skid Pad & Acc.", "Autocross", "Endurance"},
+    {"2025-08-19",   "2025-08-20",    "2025-08-21",       "2025-08-22", "2025-08-23"},
+    {"08:00:00Z",    "08:00:00Z",     "08:00:00Z",        "08:00:00Z",  "08:00:00Z"},
+  },
+};
+
+static const int fs_events_count = sizeof(fs_events_2025) / sizeof(fs_events_2025[0]);
+
+// Fills next_race with the next upcoming (or currently active) FS event from the calendar.
+// Falls back to the last event if all are past.
+void getNextFSEvent(NextRaceInfo &info) {
+  time_t now = time(nullptr);
+
+  const FSEventDef* selected = &fs_events_2025[fs_events_count - 1]; // default: last event
+
+  for (int i = 0; i < fs_events_count; i++) {
+    // Use the Endurance session (last session) end date as event end proxy
+    // Consider an event "active or upcoming" if Endurance hasn't started yet
+    const FSEventDef& ev = fs_events_2025[i];
+    struct tm tmUTC = {};
+    String endDatetime = String(ev.sessionDates[4]) + "T" + String(ev.sessionTimes[4]);
+    // add 8 hours for endurance finish
+    endDatetime.remove(endDatetime.length() - 1); // strip Z
+    strptime(endDatetime.c_str(), "%Y-%m-%dT%H:%M:%S", &tmUTC);
+    time_t endEpoch = timegm(&tmUTC) + 8 * 3600; // ~8 h for the session
+    if (now < endEpoch) {
+      selected = &fs_events_2025[i];
+      break;
+    }
+  }
+
+  info.raceName    = selected->name;
+  info.circuitName = selected->circuit;
+  info.country     = selected->country;
+  info.lat         = selected->lat;
+  info.lon         = selected->lon;
+  info.isSprintWeekend = false;
+  info.sessionCount    = 5;
+
+  for (int s = 0; s < 5; s++) {
+    info.sessions[s].name = selected->sessionNames[s];
+    info.sessions[s].date = selected->sessionDates[s];
+    info.sessions[s].time = selected->sessionTimes[s];
+  }
+
+  Serial.println("[FS Event] Next event: " + info.raceName);
+}
+
+// Runs with a lvgl timer, fetches FS team rankings and next event info
 void update_f1_api(lv_timer_t *timer) {
-  if (!fetch_f1_driver_standings()) {
-    return;
+  if (!fetch_fs_team_rankings()) {
+    Serial.println("[FS API] Rankings fetch failed, keeping existing data");
   }
 
-  if (getNextRaceInfo(next_race)) {    
-      Serial.println("[Next Race Info] Race: " + next_race.raceName);
-      Serial.println("[Next Race Info] Circuit: " + next_race.circuitName);
-      Serial.println("[Next Race Info] Country: " + next_race.country);
-      String next_race_type = next_race.isSprintWeekend ? "Sprint Weekend" : "Normal Weekend";
-      Serial.println("[Next Race Info] " + next_race_type);
+  getNextFSEvent(next_race);
 
-      for (int i = 0; i < next_race.sessionCount; i++) {
-        String has_started = "No";
-        if (hasSessionStarted(next_race.sessions[i].date, next_race.sessions[i].time)) has_started = "Yes";
-          Serial.printf("[Next Race Info] %s - %s %s - Has already started: %s\n",
-                        next_race.sessions[i].name.c_str(),
-                        next_race.sessions[i].date.c_str(),
-                        next_race.sessions[i].time.c_str(),
-                        has_started.c_str());
-      }
+  Serial.println("[FS Event] Event: " + next_race.raceName);
+  Serial.println("[FS Event] Circuit: " + next_race.circuitName);
+  Serial.println("[FS Event] Country: " + next_race.country);
 
-      // ── Weather forecast for each session (Open-Meteo, no API key) ─────────
-      // fetchWeatherForRace() is self-throttled (WEATHER_REFRESH_MS = 1 h) so
-      // calling it here every time update_f1_api fires (hourly) is safe.
-      fetchWeatherForRace(next_race);
+  for (int i = 0; i < next_race.sessionCount; i++) {
+    String has_started = "No";
+    if (hasSessionStarted(next_race.sessions[i].date, next_race.sessions[i].time)) has_started = "Yes";
+    Serial.printf("[FS Event] %s - %s %s - Started: %s\n",
+                  next_race.sessions[i].name.c_str(),
+                  next_race.sessions[i].date.c_str(),
+                  next_race.sessions[i].time.c_str(),
+                  has_started.c_str());
   }
 
-  //update_driver_standings_ui();
+  // Weather forecast for each session
+  fetchWeatherForRace(next_race);
+}
+
+  getNextFSEvent(next_race);
+
+  Serial.println("[FS Event] Event: " + next_race.raceName);
+  Serial.println("[FS Event] Circuit: " + next_race.circuitName);
+  Serial.println("[FS Event] Country: " + next_race.country);
+
+  for (int i = 0; i < next_race.sessionCount; i++) {
+    String has_started = "No";
+    if (hasSessionStarted(next_race.sessions[i].date, next_race.sessions[i].time)) has_started = "Yes";
+    Serial.printf("[FS Event] %s - %s %s - Started: %s\n",
+                  next_race.sessions[i].name.c_str(),
+                  next_race.sessions[i].date.c_str(),
+                  next_race.sessions[i].time.c_str(),
+                  has_started.c_str());
+  }
+
+  // Weather forecast for each session
+  fetchWeatherForRace(next_race);
 }
 
 void sendStatisticData(lv_timer_t *timer) {

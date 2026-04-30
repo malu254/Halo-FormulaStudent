@@ -1,10 +1,8 @@
 // -- FORWARD DECLARATIONS -- //
 void create_or_reload_settings_ui();
 void update_driver_standings_ui();
-bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]);
-bool fetch_f1_driver_standings();
+bool fetch_fs_team_rankings();
 static void populate_standings(lv_obj_t * container, int offset);
-static void populate_results(lv_obj_t * container, int offset);
 bool getLatestNews(String &title, String &link, String &desc);
 void create_or_reload_news_ui(lv_timer_t *timer);
 void create_or_reload_standings_tab_ui();
@@ -363,170 +361,21 @@ void animate_standings(lv_obj_t * container) {
 }
 
 static void populate_standings(lv_obj_t * container, int offset) {
-    //Serial.println("Populating standings");
-
     for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
         int idx = offset + i;
         if (idx >= TOTAL_DRIVERS) break;
+        if (idx >= current_season.driver_count) break;
 
-        String points = String(current_season.driver_standings[idx].points) + " pt.";
+        // surname = team name, name = university, points = ELO
+        String elo = current_season.driver_standings[idx].points + " ELO";
         lv_obj_t * row = create_standings_row(
             container,
             current_season.driver_standings[idx].position.c_str(),
-            current_season.driver_standings[idx].name.c_str(),
-            current_season.driver_standings[idx].surname.c_str(),
-            points.c_str(),
+            current_season.driver_standings[idx].surname.c_str(),  // team name
+            current_season.driver_standings[idx].name.c_str(),     // university
+            elo.c_str(),
             current_season.driver_standings[idx].constructorId
         );
-    }
-
-    //Serial.println("Populating standings DONE");
-}
-
-void animate_results(lv_obj_t * container) {
-    if (!style_fade_inited) {
-        lv_style_init(&style_fade);
-        lv_style_set_opa(&style_fade, LV_OPA_COVER);  // start fully visible
-        style_fade_inited = true;
-    }
-
-    // Ensure container has our style attached
-    lv_obj_add_style(container, &style_fade, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    //Serial.printf("Heap free: %d\n", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
-    //Serial.println("Animating Results...fading out the container");
-
-    // Step 1: Fade OUT
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, &style_fade);   // animate the style, not the object
-    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_time(&a, 300);
-    lv_anim_set_exec_cb(&a, [](void * var, int32_t v) {
-        lv_style_set_opa((lv_style_t *)var, v);
-        lv_obj_report_style_change((lv_style_t *)var);
-    });
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_in);
-
-    //lv_anim_set_deleted_cb(&a, [](lv_anim_t * a) {
-    lv_anim_set_completed_cb(&a, [](lv_anim_t * a) {
-        //Serial.println("Container faded out, cleaning container");
-
-        lv_obj_t * cont = (lv_obj_t *)a->user_data;
-
-        // Clear old rows
-        lv_obj_clean(cont);
-
-        //Serial.println("Standings container cleaned, populating");
-
-        // Advance offset
-        standings_offset += STANDINGS_PAGE_SIZE;
-        if (standings_offset >= TOTAL_DRIVERS) standings_offset = 0;
-
-        // Repopulate
-        populate_results(cont, standings_offset);
-
-       //Serial.println("Standings Populated, fading container back in");
-
-        // Fade IN
-        lv_anim_t a_in;
-        lv_anim_init(&a_in);
-        lv_anim_set_var(&a_in, &style_fade);
-        lv_anim_set_values(&a_in, LV_OPA_TRANSP, LV_OPA_COVER);
-        lv_anim_set_time(&a_in, 400);
-        lv_anim_set_exec_cb(&a_in, [](void * var, int32_t v) {
-            lv_style_set_opa((lv_style_t *)var, v);
-            lv_obj_report_style_change((lv_style_t *)var);
-        });
-        lv_anim_set_path_cb(&a_in, lv_anim_path_ease_out);
-        lv_anim_start(&a_in);
-
-        //Serial.println("Fading results container back in -- animation started");
-    });
-
-    a.user_data = container;
-    lv_anim_start(&a);
-
-    //Serial.println("Animating results -- function has run -- (fade out animation should have started now)");
-}
-
-static void populate_results(lv_obj_t * container, int offset) {
-    //Serial.println("[UI] Populating Results");
-    uint32_t delay = 400;
-
-    if (current_results != "Qualifying" && current_results != "Sprint Qualifying") {
-      for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
-        int idx = offset + i;
-        if (idx >= TOTAL_DRIVERS) break;
-
-        DriverStanding * driver = getDriverInfoByNumber(results[idx].driver_number);
-
-        if (driver == nullptr) {
-          Serial.printf("[UI] Driver not found for number %d, id: %d\n", results[idx].driver_number, idx);
-          continue; // skip this entry
-        }
-
-        char driverInitial;
-        if (driver->name.length() == 0) {
-          Serial.printf("[UI] Driver %d has empty name\n", results[idx].driver_number);
-        } else {
-          driverInitial = driver->name.charAt(0);
-        }
-
-        String name = String(driverInitial) + ". " + driver->surname + " #" + results[idx].driver_number;      
-        String gap;
-
-        char gappo[10];
-        snprintf(gappo, 10, "+ %.3f",  results[idx].gap_to_leader);
-
-        gap = (String) gappo;
-        if (idx==0) gap = (String) formatLapTime(results[idx].duration);
-
-        lv_obj_t * row = create_standings_row(container,
-                            results[idx].position.c_str(),
-                            name.c_str(),
-                            "",
-                            gap,
-                            driver->constructorId);
-
-        Serial.println("[UI] Standings row created and populated");
-      }
-    } else {
-        for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
-        int idx = offset + i;
-        if (idx >= TOTAL_DRIVERS) break;
-
-        DriverStanding * driver = getDriverInfoByNumber(results[idx].driver_number);
-
-        if (driver == nullptr) {
-          Serial.printf("[UI] Driver not found for number %d\n", results[idx].driver_number);
-          continue; // skip this entry
-        }
-
-        char driverInitial;
-        if (driver->name.length() == 0) {
-          Serial.printf("[UI] Driver %d has empty name\n", results[idx].driver_number);
-        } else {
-          driverInitial = driver->name.charAt(0);
-        }
-
-        String name = String(driverInitial) + ". " + driver->surname + " #" + results[idx].driver_number;      
-        String gap;
-
-
-        char gappo[10];
-        if (idx < 10) snprintf(gappo, 10, "+ %.3f",  results[idx].gap_to_leader_quali[2]);
-
-        gap = (String) gappo;
-        if (idx==0) gap = (String) formatLapTime(results[idx].quali[2]);
-
-        lv_obj_t * row = create_standings_row(container,
-                            results[idx].position.c_str(),
-                            name.c_str(),
-                            "",
-                            gap,
-                            driver->constructorId);
-      }
     }
 }
 
@@ -956,12 +805,9 @@ void create_or_reload_race_sessions(bool force_reload) {
                             is_active ? LV_OPA_COVER : LV_OPA_TRANSP,
                             LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    // Conditional top/bottom margins (same logic as before, now on the row)
-    if (session.name == "Sprint Qualifying" || session.name == "Qualifying") {
+    // Conditional top/bottom margins
+    if (session.name == "Skid Pad & Acc." || session.name == "Autocross") {
         lv_obj_set_style_margin_top(session_row, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-    if (session.name == "Qualifying" && !next_race.isSprintWeekend) {
-        lv_obj_set_style_margin_bottom(session_row, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
     }
 
     if (is_active) last_session = session;
@@ -972,18 +818,11 @@ void create_or_reload_race_sessions(bool force_reload) {
     lv_obj_set_flex_grow(session_label, 1);  // expands to fill space left of badge
     lv_label_set_long_mode(session_label, LV_LABEL_LONG_MODE_SCROLL);
 
-    if (next_race.isSprintWeekend &&
-        (session.name == "Sprint Qualifying" || session.name == "Sprint Race")) {
-        lv_label_set_text_fmt(session_label,
-                              LV_SYMBOL_CHARGE "   %s   " LV_SYMBOL_RIGHT "   %s",
-                              getLocalizedSessionName(session),
-                              getSessionDateTimeFormatted(session.date, session.time));
-    } else {
-        lv_label_set_text_fmt(session_label,
-                              "%s  " LV_SYMBOL_RIGHT "  %s",
-                              getLocalizedSessionName(session),
-                              getSessionDateTimeFormatted(session.date, session.time));
-    }
+    // FS sessions use their own names directly (no sprint/FP branding)
+    lv_label_set_text_fmt(session_label,
+                          "%s  " LV_SYMBOL_RIGHT "  %s",
+                          session.name.c_str(),
+                          getSessionDateTimeFormatted(session.date, session.time));
 
     // ── 3. Weather badge (right-side, fixed width) ───────────────────────────
     // Only rendered when Open-Meteo data has been fetched for this slot.
@@ -1015,149 +854,28 @@ void create_or_reload_race_sessions(bool force_reload) {
     }
   }
 
-  // ── No Spoiler: reset lift when the active session has changed ──────────
-  noSpoilerLastKnownSession = last_session.name; // always keep this current
-  if (noSpoilerLifted && last_session.name != noSpoilerLiftedForSession) {
-      noSpoilerLifted           = false;
-      noSpoilerLiftedForSession = "";
-  }
+  // ── No Spoiler: not relevant for FS (no live session results) ───────────
 
   // Start Finish Separator
   lv_obj_t *stripe = create_chequered_stripe(sessions_container);
   lv_obj_add_style(stripe, &style_stripe, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-  // The rest of your logic (fetch standings, timers, etc.) stays unchanged
+  // Always show ELO standings below the event schedule
   if (!standings_loaded_once) {
-      fetch_f1_driver_standings();
+      fetch_fs_team_rankings();
       if (!standings_loaded_once) return;
   }
 
-  if (!hasRaceWeekendStarted() && (force_reload || millis() > last_checked_session_results + check_delay)) {
-      last_checked_session_results = millis();
-
+  if (force_reload || standings_container) {
       if (standings_ui_timer) { lv_timer_del(standings_ui_timer); standings_ui_timer = NULL; }
-      lv_anim_del(&style_fade, NULL); //was standings_container
+      lv_anim_del(&style_fade, NULL);
       lv_obj_clean(standings_container);
 
-      if (noSpoilerModeActive && !noSpoilerLifted) {
-          show_spoiler_button(standings_container, true);  // true = hiding standings
-      } else {
-          populate_standings(standings_container, 0);
+      populate_standings(standings_container, 0);
 
-          standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
-              //Serial.println("Inside Standings Animation Timer");
-              animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
-          }, 15000, standings_container);
-      }
-
-      check_delay = 30 * 60000;
-      return;
-  }
-
-  if (! hasRaceWeekendStarted()) return;
-
-  // race weekend has started
-  Serial.println("[UI] Race Weekend Has Started, following with results logic");
-
-  current_results = last_session.name;
-  //Serial.println("[UI] Current results set");
-
-  if (last_session.name == "FP1" || last_session.name == "FP2" || last_session.name == "FP3") {
-    Serial.println("[UI] Inside FP123");
-    
-    if (! hasFreePracticeFinished(last_session.date, last_session.time)) {
-      Serial.println("[UI] Inside FP not finished");
-      check_delay = 5 * 60000; //every 5 minutes
-      if (standings_ui_timer) lv_timer_del(standings_ui_timer);
-      standings_ui_timer = NULL;
-      lv_anim_del(&style_fade, NULL); //was standings_container
-      lv_obj_clean(standings_container);
-      return;
-    } 
-
-    // only run this part once every 30 minutes
-    if (force_reload || millis() > last_checked_session_results + check_delay) {
-      last_checked_session_results = millis();
-
-      // clean container
-      if (standings_ui_timer) lv_timer_del(standings_ui_timer);
-      standings_ui_timer = NULL;
-      lv_anim_del(&style_fade, NULL); //was standings_container
-      lv_obj_clean(standings_container);
-
-      Serial.println("[UI] Running Results API Check");
-      bool got_results = getLastSessionResults(results);
-
-      if (!got_results || !results_loaded_once) {
-        Serial.println("[UI] API Check Run but encountered an error");
-        if (last_results != current_results) return;
-      } else {
-        last_results = current_results;
-      }
-
-      check_delay = 1800000;
-    
-      if (!results_loaded_once) return;
-
-      if (noSpoilerModeActive && !noSpoilerLifted) {
-          show_spoiler_button(standings_container, false);  // false = hiding results
-      } else {
-          populate_results(standings_container, 0);
-
-          standings_ui_timer = lv_timer_create([](lv_timer_t * t){
-              animate_results((lv_obj_t *)lv_timer_get_user_data(t));
-          }, 15000, standings_container);
-      }
-
-      Serial.println("[UI] Results for Free Practice Rendered");
-    } else {
-        Serial.println("[UI] Not yet time to check for session's results");
-    }
-
-    return;
-  }
-
-  // only run this part once every 30 minutes
-  if (!force_reload && millis() < last_checked_session_results + 1800000ULL && results_checked_once) return; // if time now is less than time of next check then stop
-  results_checked_once = true;
-  last_checked_session_results = millis();
-
-  if (standings_ui_timer) lv_timer_del(standings_ui_timer);
-  standings_ui_timer = NULL;
-  lv_anim_del(&style_fade, NULL); //was standings_container
-  lv_obj_clean(standings_container);
-
-  Serial.println("[UI] Running Results API Check");
-
-  bool got_results = getLastSessionResults(results);
-
-  if (!got_results) {
-    Serial.println("[UI] API Check Run but encountered an error");
-    if (last_results != current_results) return;
-  } else {
-    last_results = current_results;
-  }
-
-  if (last_session.name == "Sprint Qualifying" || last_session.name == "Sprint Race" || last_session.name == "Qualifying" || last_session.name == "Race") {
-    // clean container
-    if (standings_ui_timer) lv_timer_del(standings_ui_timer);
-    standings_ui_timer = NULL;
-    lv_anim_del(&style_fade, NULL); //was standings_container
-    lv_obj_clean(standings_container);
-
-    // show Race Grid when available
-    if (!results_loaded_once) return;
-
-    if (noSpoilerModeActive && !noSpoilerLifted) {
-        show_spoiler_button(standings_container, false);  // false = hiding results
-    } else {
-        populate_results(standings_container, 0);
-
-        standings_ui_timer = lv_timer_create([](lv_timer_t * t){
-            animate_results((lv_obj_t *)lv_timer_get_user_data(t));
-        }, 15000, standings_container);
-    }
-    return;
+      standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
+          animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
+      }, 15000, standings_container);
   }
 }
 
@@ -1416,7 +1134,7 @@ void create_or_reload_settings_ui() {
 
   // Show App Version
     lv_obj_t *version_label = lv_label_create(cont);
-    lv_label_set_text_fmt(version_label, "Halo F1 @ FW Version %s", fw_version);
+    lv_label_set_text_fmt(version_label, "Halo Formula Student @ FW %s", fw_version);
     lv_obj_set_style_text_align(version_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_width(version_label, LV_PCT(100));
     lv_obj_set_style_text_font(version_label, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1468,14 +1186,15 @@ static void populate_full_driver_standings(lv_obj_t * container) {
         lv_obj_set_style_text_color(lbl, lv_color_hex(0x888888), 0);
         return;
     }
-    for (int i = 0; i < current_season.driver_count && i < 30; i++) {
-        String points = String(current_season.driver_standings[i].points) + " pt.";
+    for (int i = 0; i < current_season.driver_count && i < 50; i++) {
+        // surname = team name, name = university, points = ELO
+        String elo = current_season.driver_standings[i].points + " ELO";
         create_standings_row(
             container,
             current_season.driver_standings[i].position,
-            current_season.driver_standings[i].name,
-            current_season.driver_standings[i].surname,
-            points,
+            current_season.driver_standings[i].surname,   // team name
+            current_season.driver_standings[i].name,      // university
+            elo,
             current_season.driver_standings[i].constructorId
         );
     }
@@ -1488,14 +1207,14 @@ static void populate_full_constructor_standings(lv_obj_t * container) {
         lv_obj_set_style_text_color(lbl, lv_color_hex(0x888888), 0);
         return;
     }
-    for (int i = 0; i < current_season.team_count && i < 12; i++) {
-        String points = String(current_season.team_standings[i].points) + " pt.";
+    for (int i = 0; i < current_season.team_count && i < 30; i++) {
+        String elo = current_season.team_standings[i].points + " ELO";
         create_standings_row(
             container,
             current_season.team_standings[i].position,
-            current_season.team_standings[i].name,
+            current_season.team_standings[i].name,  // country name
             "",
-            points,
+            elo,
             current_season.team_standings[i].id
         );
     }

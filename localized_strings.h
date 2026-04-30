@@ -86,11 +86,11 @@ const LanguageStrings language_strings_en PROGMEM = {
   "Free Practice 1",
   "Free Practice 2",
   "Free Practice 3",
-  "Upcoming Grand Prix",
+  "Upcoming Event",
   "Upcoming Session",
-  "Sprint Weekend",
-  "DRIVER STANDINGS",
-  "TEAM STANDINGS",
+  "Electric Class",
+  "ELO RANKINGS",
+  "NATIONS",
   "Scan to Read",
   "Scan to Open",
   "Language",
@@ -143,11 +143,11 @@ const LanguageStrings language_strings_it PROGMEM = {
   "Prove Libere 1",
   "Prove Libere 2",
   "Prove Libere 3",
-  "Prossimo Gran Premio",
+  "Prossimo Evento",
   "Prossima Sessione",
-  "Sprint Weekend",
-  "CLASSIFICA PILOTI",
-  "CLASSIFICA TEAM",
+  "Classe Elettrica",
+  "CLASSIFICA ELO",
+  "NAZIONI",
   "Scansiona per leggere",
   "Scansiona per aprire",
   "Lingua",
@@ -200,11 +200,11 @@ const LanguageStrings language_strings_es PROGMEM = {
   "Entrenamiento libre 1",
   "Entrenamiento libre 2",
   "Entrenamiento libre 3",
-  "Proximo Gran Premio",
+  "Proximo Evento",
   "Proxima sesion",
-  "Fin de semana Sprint",
-  "PILOTOS",
-  "EQUIPOS",
+  "Clase Electrica",
+  "RANKING ELO",
+  "NACIONES",
   "Escanear para leer",
   "Escanear para abrir",
   "Idioma",
@@ -569,20 +569,28 @@ const LanguageStrings language_strings_pl PROGMEM = {
 };
 
 uint32_t get_team_color(String team) {
-  // maybe use a switch case
-  if (team == "mercedes") return 0x00D7B6;
-  if (team == "red_bull") return 0x0000FF;
-  if (team == "ferrari") return 0xFF1100;
-  if (team == "mclaren") return 0xF47600;
-  if (team == "alpine") return 0x00A1E8;
-  if (team == "rb") return 0x6C98FF;
-  if (team == "aston_martin") return 0x229971;
-  if (team == "williams") return 0x1868DB;
-  if (team == "sauber") return 0x01C00E;
-  if (team == "haas") return 0xFFFFFF; //0x9C9FA2;
-  if (team == "audi") return 0xFF3300;
+  // Country-code based colors for Formula Student teams
+  if (team == "GER") return 0xDD0000; // Germany – red
+  if (team == "AUT") return 0xEE0000; // Austria – red
+  if (team == "SUI") return 0xFF0000; // Switzerland – red
+  if (team == "GBR") return 0x0000FF; // Great Britain – blue
+  if (team == "NOR") return 0xC8102E; // Norway – red
+  if (team == "NLD") return 0xFF6600; // Netherlands – orange
+  if (team == "ITA") return 0x00AA00; // Italy – green
+  if (team == "FRA") return 0x0055A4; // France – blue
+  if (team == "ESP") return 0xFFC400; // Spain – yellow
+  if (team == "CZE") return 0xD7141A; // Czech Republic – red
+  if (team == "SVK") return 0x0B4EA2; // Slovakia – blue
+  if (team == "HUN") return 0x00B050; // Hungary – green
+  if (team == "POL") return 0xDC143C; // Poland – red
+  if (team == "USA") return 0x3C3B6E; // USA – navy
+  if (team == "AUS") return 0xFF9A00; // Australia – gold
+  if (team == "CHN") return 0xDE2910; // China – red
+  if (team == "JPN") return 0xBC002D; // Japan – red
+  if (team == "IND") return 0xFF9933; // India – saffron
+  if (team == "BRA") return 0x009C3B; // Brazil – green
 
-  return 0x333333;
+  return 0x444444; // default grey
 }
 
 struct LanguageEntry {
