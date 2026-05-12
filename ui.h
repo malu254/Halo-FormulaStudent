@@ -331,7 +331,7 @@ void animate_standings(lv_obj_t * container) {
 
         // Advance offset
         standings_offset += STANDINGS_PAGE_SIZE;
-        if (standings_offset >= TOTAL_DRIVERS) standings_offset = 0;
+        if (standings_offset >= TOTAL_TEAMS) standings_offset = 0;
 
         // Repopulate
         populate_standings(cont, standings_offset);
@@ -363,7 +363,7 @@ void animate_standings(lv_obj_t * container) {
 static void populate_standings(lv_obj_t * container, int offset) {
     for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
         int idx = offset + i;
-        if (idx >= TOTAL_DRIVERS) break;
+        if (idx >= TOTAL_TEAMS) break;
         if (idx >= current_season.driver_count) break;
 
         // surname = team name, name = university, points = ELO

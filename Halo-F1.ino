@@ -1,4 +1,4 @@
-const int DRIVERS_NUMBER = 50; // Max FS teams tracked
+const int MAX_FS_TEAMS = 50; // Max FS teams tracked/shown
 
 // ESP32 Boards used v3.3.4
 
@@ -151,7 +151,7 @@ NextRaceInfo next_race;
 // No live session results for Formula Student (no equivalent of OpenF1 API)
 bool standings_loaded_once = false;
 
-const int TOTAL_DRIVERS = 50; // max FS teams shown
+const int TOTAL_TEAMS = MAX_FS_TEAMS; // legacy UI naming compatibility
 
 lv_display_t * disp;
 lv_timer_t * clock_timer, * f1_api_timer, * standings_ui_timer, *news_timer, *statistics_timer, *notifications_timer;
@@ -171,7 +171,7 @@ bool   noSpoilerWasStandings      = false; // true = was hiding standings; false
 
 static int standings_offset = 0;
 const int STANDINGS_PAGE_SIZE = 5;
-// TOTAL_DRIVERS is defined above (50)
+// TOTAL_TEAMS is defined above
 
 struct ScreenStruct {
   lv_obj_t * wifi;
