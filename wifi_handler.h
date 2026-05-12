@@ -386,26 +386,6 @@ void update_f1_api(lv_timer_t *timer) {
   fetchWeatherForRace(next_race);
 }
 
-  getNextFSEvent(next_race);
-
-  Serial.println("[FS Event] Event: " + next_race.raceName);
-  Serial.println("[FS Event] Circuit: " + next_race.circuitName);
-  Serial.println("[FS Event] Country: " + next_race.country);
-
-  for (int i = 0; i < next_race.sessionCount; i++) {
-    String has_started = "No";
-    if (hasSessionStarted(next_race.sessions[i].date, next_race.sessions[i].time)) has_started = "Yes";
-    Serial.printf("[FS Event] %s - %s %s - Started: %s\n",
-                  next_race.sessions[i].name.c_str(),
-                  next_race.sessions[i].date.c_str(),
-                  next_race.sessions[i].time.c_str(),
-                  has_started.c_str());
-  }
-
-  // Weather forecast for each session
-  fetchWeatherForRace(next_race);
-}
-
 void sendStatisticData(lv_timer_t *timer) {
   String UUID = getDeviceUUID();
   String current_language = localized_text->language_name_eng;

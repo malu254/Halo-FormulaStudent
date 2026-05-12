@@ -1,5 +1,4 @@
 // forward declaration
-String current_f1_champion = "4"; // Norris
 void create_or_reload_race_sessions(bool force_reload = false);
 void adjustBrightness(uint8_t brightness);
 void create_or_reload_settings_ui();
@@ -165,17 +164,6 @@ const char* getLocalizedSessionName(RaceSession &session) {
   if (session.name == "Sprint Race") return localized_text->sprint_race;
 
   return session.name.c_str();
-}
-
-// Results API doesn't give driver infos, this retrieves them from the saved standings to avoid another API call
-DriverStanding* getDriverInfoByNumber(const String& driverNumber) {
-  for (int i = 0; i < current_season.driver_count; i++) {
-    //Serial.printf("Driver number: %s\n", current_season.driver_standings[i].number);
-    if (current_season.driver_standings[i].number == driverNumber || current_season.driver_standings[i].number == current_f1_champion && driverNumber == "1") {
-      return &current_season.driver_standings[i];  // return pointer to the matching struct
-    }
-  }
-  return nullptr; // not found
 }
 
 // Formats session datetime 

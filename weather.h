@@ -35,7 +35,7 @@ static unsigned long  last_weather_fetch_ms = 0;
 
 // ── Circuit coordinate lookup ───────────────────────────────────────────────
 // Coordinates come directly from the Jolpi/Ergast API (Circuit.Location.lat /
-// .long), stored in NextRaceInfo.lat / .lon after getNextRaceInfo() runs.
+// .long), stored in NextRaceInfo.lat / .lon after the event fetch runs.
 // No hardcoded table needed.
 
 // ── WMO weather code helpers ────────────────────────────────────────────────
@@ -98,7 +98,7 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
         return true;
     }
 
-    // ── Validate coordinates populated by getNextRaceInfo() ────────────────
+    // ── Validate coordinates populated by the event fetch ──────────────────
     if (race.lat == 0.0f && race.lon == 0.0f) {
         Serial.println("[Weather] Circuit coordinates not yet available, skipping.");
         return false;
@@ -126,7 +126,7 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
 
     // ── HTTP request ────────────────────────────────────────────────────────
     WiFiClientSecure secureClient;
-    secureClient.setInsecure();   // same pattern as getLastSessionResults()
+    secureClient.setInsecure();   // same TLS pattern used in API fetchers
 
     HTTPClient http;
     http.begin(secureClient, url);

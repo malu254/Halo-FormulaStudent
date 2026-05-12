@@ -666,7 +666,7 @@ void show_spoiler_button(lv_obj_t *container, bool wasStandings) {
 
     // Record what we are hiding so the button callback knows what to restore
     noSpoilerWasStandings      = wasStandings;
-    noSpoilerLastKnownSession  = wasStandings ? "" : current_results; // standings have no session name
+    noSpoilerLastKnownSession  = "";
 
     lv_obj_clean(container);
 
@@ -713,17 +713,10 @@ void show_spoiler_button(lv_obj_t *container, bool wasStandings) {
             if (standings_ui_timer) { lv_timer_del(standings_ui_timer); standings_ui_timer = NULL; }
             lv_obj_clean(standings_container);
 
-            if (noSpoilerWasStandings) {
-                populate_standings(standings_container, 0);
-                standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
-                    animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
-                }, 15000, standings_container);
-            } else {
-                populate_results(standings_container, 0);
-                standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
-                    animate_results((lv_obj_t *)lv_timer_get_user_data(t));
-                }, 15000, standings_container);
-            }
+            populate_standings(standings_container, 0);
+            standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
+                animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
+            }, 15000, standings_container);
         }, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
 }
