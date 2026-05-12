@@ -1,8 +1,8 @@
-# Halo F1
+# Halo Formula Student
 
-**A Formula 1 desktop companion for the JC4827W543 (ESP32-S3 + 4.3" TFT)**
+**A Formula Student desktop companion for the JC4827W543 (ESP32-S3 + 4.3" TFT)**
 
-Halo F1 is a small, always-on display that shows everything you need about the current F1 season — next race session times in your local timezone, the full drivers' and constructors' championship standings, the latest session results, and F1 news headlines. No apps, no browser tabs, no ads. Just a glance at your desk.
+Halo Formula Student is a small, always-on display that shows key Formula Student event sessions in your local timezone and team ELO rankings, with special focus on Germany, Spain and Czech Republic events.
 
 The pre-compiled firmware is free to install from the [project website](https://halof1.com/). This repository contains the full source code for reference and personal use.
 
@@ -103,13 +103,13 @@ The following defines are set at the top of `F1Halo.ino` and match the JC4827W54
 
 ## Data Sources
 
-Halo F1 fetches all data over HTTPS. No account or API key is required.
+Halo Formula Student fetches all data over HTTPS. No account or API key is required.
 
 | Data                          | Source                                       |
 | ----------------------------- | -------------------------------------------- |
-| Driver standings              | [Jolpica / Ergast F1 API](https://jolpi.ca/) |
-| Race calendar & session times | [Jolpica / Ergast F1 API](https://jolpi.ca/) |
-| Live session results          | [OpenF1 API](https://openf1.org/)            |
+| Team ELO rankings             | FSELO (`fselo.get-racing.de`) with local fallback |
+| Event calendar & session times| Built-in Formula Student event calendar (DE/ES/CZ focus) |
+| Live session results          | Not available (organizer APIs are not public) |
 | Timezone offset from IP       | [IP API](https://ipapi.co/)                  |
 | Weather Forecast              | [Open Meteo](https://open-meteo.com/)        |
 | News headlines                | The Race — RSS feed                          |

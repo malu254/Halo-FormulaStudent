@@ -1,4 +1,4 @@
-name: Build Halo F1
+name: Build Halo Formula Student
 
 on:
     # commenting out as it doesn't produce usable binaries atm
@@ -74,20 +74,19 @@ jobs:
                   fi
 
                   mkdir -p ./build
-                  cp "$FILE" ./build/Halo-F1-${{ matrix.touch }}.bin
-                  echo "Copied: $FILE -> ./build/Halo-F1-${{ matrix.touch }}.bin"
+                  cp "$FILE" ./build/Halo-FormulaStudent-${{ matrix.touch }}.bin
+                  echo "Copied: $FILE -> ./build/Halo-FormulaStudent-${{ matrix.touch }}.bin"
              
             - name: Upload artifact
               uses: actions/upload-artifact@v7
               with:
-                  name: Halo-F1-${{ matrix.touch }}
-                  path: ./build/Halo-F1-${{ matrix.touch }}.bin
+                  name: Halo-FormulaStudent-${{ matrix.touch }}
+                  path: ./build/Halo-FormulaStudent-${{ matrix.touch }}.bin
 
             - name: Upload to release
               if: github.event_name == 'release'
               uses: softprops/action-gh-release@v3
               with:
-                  files: ./build/Halo-F1-${{ matrix.touch }}.bin
-
+                  files: ./build/Halo-FormulaStudent-${{ matrix.touch }}.bin
 
 
